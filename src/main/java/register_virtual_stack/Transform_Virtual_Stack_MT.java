@@ -1,4 +1,4 @@
-package register_virtual_stack;
+//package register_virtual_stack;
 
 /** 
  * Albert Cardona, Ignacio Arganda-Carreras and Stephan Saalfeld 2009. 
