@@ -1,4 +1,4 @@
-package register_virtual_stack;
+//package register_virtual_stack;
 
 /** 
  * Albert Cardona, Ignacio Arganda-Carreras and Stephan Saalfeld. 
@@ -21,10 +21,6 @@ import ij.plugin.PlugIn;
 import ij.process.ByteProcessor;
 import ij.process.ImageProcessor;
 
-import sc.fiji.io.DM3_Reader;
-import loci.formats.FormatException;
-import loci.plugins.BF;
-
 import java.awt.Color;
 import java.awt.FileDialog;
 import java.awt.Frame;
@@ -34,7 +30,6 @@ import java.awt.geom.AffineTransform;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.FilenameFilter;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -68,6 +63,7 @@ import mpicbg.trakem2.transform.TransformMesh;
 import mpicbg.trakem2.transform.TransformMeshMapping;
 import mpicbg.trakem2.transform.TranslationModel2D;
 
+import sc.fiji.io.DM3_Reader;
 
 /** 
  * Fiji plugin to register sequences of images in a concurrent (multi-thread) way.
@@ -128,6 +124,7 @@ public class Register_Virtual_Stack_MT implements PlugIn
 	public static String sourceDirectory="";
 	/** output directory **/
 	public static String outputDirectory="";
+    public static String saveTransformDirectory="";
 	
 	// Regularization 
 	/** scaling regularization parameter [0.0-1.0] */
@@ -170,7 +167,7 @@ public class Register_Virtual_Stack_MT implements PlugIn
 
 	/** possible extensions of files to be registered/transformed */
 	public static final String exts = 
-			".tif.jpg.png.gif.tiff.jpeg.bmp.pgm.ima.dm3.dm4";
+			".tif.jpg.png.gif.tiff.jpeg.bmp.pgm.ima.dm3";
 
 	//---------------------------------------------------------------------------------
 	/**
@@ -189,7 +186,7 @@ public class Register_Virtual_Stack_MT implements PlugIn
 		gd.addCheckbox("Advanced setup", advanced);	
 		gd.addCheckbox("Shrinkage constrain", non_shrinkage);
 		gd.addCheckbox("Save transforms", save_transforms);
-		
+		gd.addDirectoryField("transform file output directory", saveTransformDirectory, 50);
 		gd.showDialog();
 		
 		// Exit when canceled
@@ -203,7 +200,8 @@ public class Register_Virtual_Stack_MT implements PlugIn
 		advanced = gd.getNextBoolean();
 		non_shrinkage = gd.getNextBoolean();
 		save_transforms = gd.getNextBoolean();
-
+        saveTransformDirectory = gd.getNextString();
+                
 		String source_dir = sourceDirectory;
 		if (null == source_dir) 
 		{
@@ -243,15 +241,17 @@ public class Register_Virtual_Stack_MT implements PlugIn
 		String save_dir = null;
 		if(save_transforms)
 		{
+            save_dir = saveTransformDirectory;
+            //IJ.showMessage(save_dir);
 			// Choose target folder to save images into
-			JFileChooser chooser = new JFileChooser(source_dir); 			
-			chooser.setDialogTitle("Choose directory to store Transform files");
-			chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-			chooser.setAcceptAllFileFilterUsed(true);
-			if (chooser.showOpenDialog(null) != JFileChooser.APPROVE_OPTION)
-		    	return;
+			//JFileChooser chooser = new JFileChooser(source_dir); 			
+			//chooser.setDialogTitle("Choose directory to store Transform files");
+			//chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+			//chooser.setAcceptAllFileFilterUsed(true);
+			//if (chooser.showOpenDialog(null) != JFileChooser.APPROVE_OPTION)
+		    //	return;
 			
-			save_dir = chooser.getSelectedFile().toString();
+			//save_dir = chooser.getSelectedFile().toString();
 			if (null == save_dir) 
 				return;
 			save_dir = save_dir.replace('\\', '/');
@@ -959,7 +959,8 @@ public class Register_Virtual_Stack_MT implements PlugIn
 	{
 		ExecutorService exe = 
 				Executors.newFixedThreadPool( Prefs.getThreads() );
-		final ImagePlus first = readImage(source_dir + sorted_file_names[0]);
+        String path3 = (source_dir + sorted_file_names[0]);
+		final ImagePlus first = IJ.openImage(path3.replace('/', '\\'));
 		
 		// Common bounds to create common frame for all images
 		final Rectangle commonBounds = new Rectangle(0, 0, first.getWidth(), first.getHeight());
@@ -993,8 +994,12 @@ public class Register_Virtual_Stack_MT implements PlugIn
 			ind++;
 			Boolean saved_file = null;
 			try{
+                //IJ.showMessage("hahaha 0");
 				IJ.showStatus("Applying transform " + (ind+1) + "/" + sorted_file_names.length);
+                //IJ.showMessage("hahaha 1");
 				saved_file = it.next().get();
+                //IJ.showMessage("hahaha 2" + saved_file);
+				it.remove(); // so list doesn't build up anywhere with Callable-s that have been called already.				
 				System.gc();
 			} catch (InterruptedException e) {
 				IJ.error("Interruption exception!");
@@ -1076,6 +1081,7 @@ public class Register_Virtual_Stack_MT implements PlugIn
 			try {
 				IJ.showStatus("Resizing image " + (ind+1) + "/" + sorted_file_names.length);
 				filename = it1.next().get();
+				it1.remove(); // so list doesn't build up anywhere with Callable-s that have been called already.
 				System.gc();
 			} catch (InterruptedException e) {
 				IJ.error("Interruption exception!");
@@ -1096,16 +1102,18 @@ public class Register_Virtual_Stack_MT implements PlugIn
 		names.clear();
 		exe.shutdown();
 
-		// Show registered stack (if not in headless mode)
-		if( IJ.getInstance() != null )
-			new ImagePlus( "Registered " + 
-							new File(source_dir).getName(), stack).show();
-		
-		// Save transforms
+        // Save transforms
 		if(save_dir != null)
 		{
 			saveTransforms(transform, save_dir, sorted_file_names);			
 		}
+        
+		// Show registered stack (if not in headless mode)
+		//if( IJ.getInstance() != null )
+		//	new ImagePlus( "Registered " + 
+		//					new File(source_dir).getName(), stack).show();
+		
+
 
 		IJ.showStatus("Done!");
 		
@@ -1199,8 +1207,8 @@ public class Register_Virtual_Stack_MT implements PlugIn
 		try {			
 
 			ImagePlus imp1 = null;
-			ImagePlus imp2 = readImage( source_dir +
-					sorted_file_names[referenceIndex] );
+            String path5 = source_dir + sorted_file_names[referenceIndex];
+			ImagePlus imp2 = IJ.openImage(path5.replace('/','\\'));
 			imp2.killRoi();
 			
 			// Masks
@@ -1215,7 +1223,7 @@ public class Register_Virtual_Stack_MT implements PlugIn
 			boundsFor.add(new Rectangle(0, 0, imp2.getWidth(), imp2.getHeight()));
 			
 			// Save the reference image, untouched:
-			new FileSaver(imp2).saveAsTiff(makeTargetPath(target_dir, sorted_file_names[referenceIndex]));
+			exe.submit(saveImage(imp2, makeTargetPath(target_dir, sorted_file_names[referenceIndex])));
 
 			// Array of resulting coordinate transforms
 			CoordinateTransform[] transform = new CoordinateTransform[sorted_file_names.length];
@@ -1228,7 +1236,8 @@ public class Register_Virtual_Stack_MT implements PlugIn
 				imp1mask = imp2mask;
 				// Create empty mask for second image
 				imp2mask = new ImagePlus();
-				imp2 = readImage(source_dir + sorted_file_names[i]);
+                String path6 = source_dir + sorted_file_names[i];
+				imp2 = IJ.openImage(path6.replace('/','\\'));
 				imp2.killRoi();
 				
 				// Select coordinate transform based on the registration model
@@ -1249,7 +1258,8 @@ public class Register_Virtual_Stack_MT implements PlugIn
 			transform[referenceIndex] = new AffineModel2D();
 			
 			// Backward registration (from reference image to the beginning of the sequence)
-			imp2 = readImage(source_dir + sorted_file_names[referenceIndex]);
+            String path7 = source_dir + sorted_file_names[referenceIndex];
+			imp2 = IJ.openImage(path7.replace('/','\\'));
 			// Backward bounds
 			final List<Rectangle> boundsBack = new ArrayList<Rectangle>();
 			boundsBack.add(new Rectangle(0, 0, imp2.getWidth(), imp2.getHeight()));
@@ -1261,7 +1271,8 @@ public class Register_Virtual_Stack_MT implements PlugIn
 				imp1mask = imp2mask;
 				// Create empty mask for second image
 				imp2mask = new ImagePlus();
-				imp2 = readImage(source_dir + sorted_file_names[i]);
+                String path8 = source_dir + sorted_file_names[i];
+				imp2 = IJ.openImage(path8.replace('/','\\'));
 				imp2.killRoi();
 				
 				// Select coordinate transform based on the registration model
@@ -1402,7 +1413,8 @@ public class Register_Virtual_Stack_MT implements PlugIn
 		return new Callable<String>() {
 			public String call() {
 				try {					
-					ImagePlus imp = IJ.openImage(path);
+                    String path9 = path;
+					ImagePlus imp = IJ.openImage(path9.replace('/','\\'));
 					if (null == imp) {
 						IJ.log("Could not open target image at " + path);
 						return null;
@@ -1451,10 +1463,12 @@ public class Register_Virtual_Stack_MT implements PlugIn
 		return new Callable<String>() {
 			public String call() {
 				try {
-					final FileWriter fw = new FileWriter(path);
+                    //IJ.showMessage("hahaha eee" +path);
+                    String path10 = path.replace('/','\\');
+					final FileWriter fw = new FileWriter(path10); //fuch there is onyly here tail
 					fw.write(t.toXML(""));
 					fw.close();
-					return new File(path).getName();
+					return new File(path10).getName();
 				} catch (Exception e) {
 					e.printStackTrace();					
 					return null;
@@ -1526,54 +1540,40 @@ public class Register_Virtual_Stack_MT implements PlugIn
 		return new Callable<ArrayList<Feature>>() {
 			public ArrayList<Feature> call() 
 			{
-				
-				ImagePlus imp = readImage(path);
-				centerX[index] = imp.getWidth() / 2;
-				centerY[index] = imp.getHeight() / 2;
-				ArrayList<Feature> fs = new ArrayList<Feature>();
-				new SIFT( new FloatArray2DSIFT( p.sift ) ).extractFeatures(imp.getProcessor(), fs);
-				flush(imp);
-				imp = null;
-
-				System.gc();
-				
-				return fs;
+				String path2 = "";
+				ImagePlus imp;
+				if( path.toLowerCase().endsWith(".dm3") )
+				{
+					DM3_Reader reader = new DM3_Reader();
+					File f = new File( path );
+					imp = reader.load( f.getParent(), f.getName() );
+				}
+				else
+                //    IJ.showMessage("hahaha 1");
+                
+               // try{
+                        path2 = path.replace('/', '\\'); //fuck
+                        imp = IJ.openImage(path2);
+                //        IJ.showMessage("hahaha 2" + path2);
+               //     } catch (Exception e) {
+               //         IJ.showMessage("hahaha 3" + path2);
+               // }
+                    //path2 = path.replace('//', '\\');
+                 //   imp = IJ.openImage(path2);
+                 //   IJ.showMessage("hahaha 2" + path);
+                    centerX[index] = imp.getWidth() / 2;
+                    centerY[index] = imp.getHeight() / 2;
+                    ArrayList<Feature> fs = new ArrayList<Feature>();
+                    new SIFT( new FloatArray2DSIFT( p.sift ) ).extractFeatures(imp.getProcessor(), fs);
+                    //IJ.showMessage("hahaha 6");
+                    flush(imp);
+                    imp = null;
+                    System.gc();
+                    return fs;
 			}
 		};
 	}
-	/**
-	 * Read image files
-	 * @param path full path to image
-	 * @return read image or null if error
-	 */
-	public static ImagePlus readImage(final String path) {
-		final ImagePlus imp;
-		if( path.toLowerCase().endsWith(".dm3") )
-		{
-			DM3_Reader reader = new DM3_Reader();
-			File f = new File( path );
-			imp = reader.load( f.getParent(), f.getName() );
-		}
-		else if( path.toLowerCase().endsWith(".dm4") )
-		{
-			ImagePlus[] imps = null;
-			try {
-				imps = BF.openImagePlus( path );
-			} catch (FormatException e) {
-				// Wrong format
-				e.printStackTrace();
-				return null;
-			} catch (IOException e) {
-				// IO error
-				e.printStackTrace();
-				return null;
-			}
-			imp = imps[ 0 ];
-		}
-		else
-			imp = IJ.openImage(path);
-		return imp;
-	}
+	
 	
 	//-----------------------------------------------------------------------------------------
 	/**
@@ -1614,7 +1614,8 @@ public class Register_Virtual_Stack_MT implements PlugIn
 		return new Callable<Boolean>() {
 			public Boolean call() {
 				// Open next image
-				final ImagePlus imp2 = readImage(source_dir + file_name);
+                String path4 = source_dir + file_name;
+				final ImagePlus imp2 = IJ.openImage(path4.replace('/','\\'));
 				// Calculate transform mesh
 				TransformMesh mesh = new TransformMesh(transform, 32, imp2.getWidth(), imp2.getHeight());
 				TransformMeshMapping mapping = new TransformMeshMapping(mesh);
@@ -1892,7 +1893,7 @@ public class Register_Virtual_Stack_MT implements PlugIn
 		commonBounds.height = max_y - min_y;
 		
 		// Save target image
-		new FileSaver(imp2).saveAsTiff(makeTargetPath(target_dir, sorted_file_names[i]));
+		exe.submit(saveImage(imp2, makeTargetPath(target_dir, sorted_file_names[i])));		
 		return true;
 	} //end method register
 	
